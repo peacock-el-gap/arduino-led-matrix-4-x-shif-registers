@@ -2,7 +2,7 @@
 // DEBUG
 // #define DEBUG_MODE
 
-#ifdef DEBUG_MODE
+#if defined(DEBUG_MODE)
   // Debug pin
   #define DEBUG_pin 7
 #endif
@@ -44,30 +44,29 @@ const uint8_t LED_b[]   = { 0, 21, 42, 63, 85, 106, 127, 148, 170, 191, 212, 233
 const uint8_t LED_eye[] = { 0,  1,  2,  3,  6,  10,  20,  36,  66, 120, 218, 254 };
 */
 
-// 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
-// 0 1   3     6          11                         20          24
-byte hEye[] = { 0, 1, 3, 6, 11, 20, 24 };
+//              0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
+//              0 1   3     6          11                      19             24
+byte hEye[] = { 0,1,  3,    6,         11,                     19,            24 };
 
 #define LED_NUMBER 8
 
-//                         3        1        0        1        3        6       11       20
-// 8 LEDs, brightness      |        |        |        |        |        |        |        |
-// used to show LEDs       |        |        |        |        |        |        |        |
-int b[LED_NUMBER] = { hEye[0], hEye[1], hEye[2], hEye[3], hEye[4], hEye[5], hEye[6], hEye[7] };
-// 8 LEDs, brightness gradient
-// used only in loop() to change b[] values
-int d[LED_NUMBER] = {     -1,      -1,       1,       1,       1,       1,       1,       1 };
+// used to show LEDs
+int _R[LED_NUMBER] = { hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0] };
+int _G[LED_NUMBER] = { hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0] };
+int _B[LED_NUMBER] = { hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0], hEye[0] };
 
-// @todo: remove LED_PATTERN, should use only brightness
-//                    <- x --><- R --><- G --><- B -->
+// @todo: remove LED_PATTERN
 #define LED_PATTERN 0b11111111111111111111111111111111
+
 //----------------------------------------------
 
 
 //----------------------------------------------
-// PWM cycle (counter)
+// PWM cycle (counter) per color
 // 0...MAX_BRIGHTNESS
-int cyclePWM = 0;
+byte cyclePWM_R = 0;
+byte cyclePWM_G = 0;
+byte cyclePWM_B = 0;
 //----------------------------------------------
 
 
@@ -88,15 +87,17 @@ void setup() {
   digitalWrite( SH_CP_clock_pin, LOW );
   digitalWrite( DS_data_pin, LOW );
 
-  #ifdef DEBUG_MODE
+  #if defined(DEBUG_MODE)
     // debug pin
     pinMode( DEBUG_pin, OUTPUT );
     digitalWrite( DEBUG_pin, LOW );
   #endif
   
-  // set up interrupts
-  setUpInterrupts();
-  
+  #if defined(TIMER_1) || defined(TIMER_2)
+    // set up interrupts
+    setUpInterrupts();
+  #endif  
+
   Serial.println(F( "startup end" ));
 }
 
@@ -106,13 +107,13 @@ void setup() {
   // interrupt service body
   // @todo: do not use LED_PATTERN, use brightness level only
   void interruptBody() {
-    #ifdef DEBUG_MODE
+    #if defined(DEBUG_MODE)
       digitalWrite( DEBUG_pin, HIGH );
     #endif
     
     showAtBrightness( LED_PATTERN );
   
-    #ifdef DEBUG_MODE
+    #if defined(DEBUG_MODE)
       digitalWrite( DEBUG_pin, LOW );
     #endif  
   }
@@ -146,7 +147,10 @@ void shiftOutFast4( long val ) {
   long b = val;
   
   for ( i = 0; i < 32; i++ ) {
-    Serial.print( (b&1) );
+    #if defined(DEBUG_MODE)
+      Serial.print( (b&1) );
+    #endif
+    
     digitalWrite( DS_data_pin, (b&1) );
     b >>= 1;
     delayMicroseconds(2);
@@ -154,7 +158,10 @@ void shiftOutFast4( long val ) {
     delayMicroseconds( 2 );
     digitalWrite( SH_CP_clock_pin, LOW );       
   }
-  Serial.println();
+  
+  #if defined(DEBUG_MODE)
+    Serial.println();
+  #endif
 }
 
 
@@ -259,7 +266,8 @@ void showAtBrightness( long d ) {
     
     /*
     // common cathode (-)
-    if ( cyclePWM < b[i] ) {
+    // @todo: address R, G, B
+    if ( cyclePWM_R < _R[i] ) {
       // show (only if 1)
       d |= ( ( 1 << i ) & d );
     } else {
@@ -269,7 +277,8 @@ void showAtBrightness( long d ) {
     */
 
     // common anode (+)
-    if ( cyclePWM < b[i] ) {
+    // @todo: address R, G, B
+    if ( cyclePWM_R < _R[i] ) {
       // do not show regardless if 0 or 1
       d &= ~( 1 << i );
     } else {
@@ -282,15 +291,15 @@ void showAtBrightness( long d ) {
   sendDataToRegister( d );
   
   // next PWM cycle
-  if ( ++cyclePWM > MAX_BRIGHTNESS ) {
-    cyclePWM = 0;
+  // @todo: address R, G, B
+  if ( ++cyclePWM_R > MAX_BRIGHTNESS ) {
+    cyclePWM_B = 0;
   }
   
 }
 
 
 //  Matrix
-//    01234567  <-- x, (+), 1 show, 0 do not show
 //  7 xxxxxxxx
 //  6 xxxxxxxx
 //  5 xxxxxxxx
@@ -299,7 +308,7 @@ void showAtBrightness( long d ) {
 //  2 xxxxxxxx
 //  1 xxxxxxxx
 //  0 xxxxxxxx
-//  ^
+//  ^ 01234567  <-- x, (+), 1 show, 0 do not show
 //  |
 //  y (colors), (-), 0 show, 1 do not show
 // 
@@ -317,7 +326,7 @@ long LED[] = {
   0b11111111111111110000000011111111, // green
   0b11111111000000001111111111111111, // blue
   */
-//  <- R --><- B --><- G -->
+//  <- R --><- B --><- G --><- y -->
   0b00000001111111111111111111111110, // red
   0b11111111111111110000001011111101, // green
   0b11111111000001001111111111111011, // blue
@@ -332,20 +341,68 @@ long LED[] = {
   0b00001000111111111111111111110111, // red
   0b11111111000001001111111111111011, // blue
   0b11111111111111110000001011111101  // green
+//  <- R --><- B --><- G --><- y -->
 };
-//  <- R --><- B --><- G -->
+
+byte LED2[][4] {
+//    <- R -->    <- B -->    <- G -->    <- y -->
+  { 0b00000001, 0b11111111, 0b11111111, 0b11111110 }, // red
+  { 0b11111111, 0b11111111, 0b00000010, 0b11111101 }, // green
+  { 0b11111111, 0b00000100, 0b11111111, 0b11111011 }, // blue
+  { 0b00001000, 0b11111111, 0b11111111, 0b11110111 }, // red
+  { 0b11111111, 0b11111111, 0b00010000, 0b11101111 }, // green
+  { 0b11111111, 0b00100000, 0b11111111, 0b11011111 }, // blue
+  { 0b01000000, 0b11111111, 0b11111111, 0b10111111 }, // red
+  { 0b11111111, 0b11111111, 0b10000000, 0b01111111 },  // green
+  { 0b01000000, 0b11111111, 0b11111111, 0b10111111 }, // red
+  { 0b11111111, 0b00100000, 0b11111111, 0b11011111 }, // blue
+  { 0b11111111, 0b11111111, 0b00010000, 0b11101111 }, // green
+  { 0b00001000, 0b11111111, 0b11111111, 0b11110111 }, // red
+  { 0b11111111, 0b00000100, 0b11111111, 0b11111011 }, // blue
+  { 0b11111111, 0b11111111, 0b00000010, 0b11111101 }  // green
+//    <- R -->    <- B -->    <- G -->    <- y -->
+};
+
+byte MATRIX[4] {
+//    <- R -->    <- B -->    <- G -->    <- Y -->
+//    <- - -->    <- - -->    <- - -->    <- + -->
+//    <- x -->    <- x -->    <- x -->    <- y -->
+    0b11111111, 0b11111111, 0b11111111, 0b00000000
+};
+
 
 #define DELAY 200
+
+#define _R_ 0
+#define _G_ 2
+#define _B_ 1
+#define _Y_ 3
 
 //----------------------------------------------
 // loop
 void loop() {
 
+  long v;
+  for ( int i = 0; i < sizeof(LED2) / ( 4 * sizeof(byte) ); i++ ) {
+    MATRIX[_R_] = LED2[i][_R_];
+    MATRIX[_G_] = LED2[i][_G_];
+    MATRIX[_B_] = LED2[i][_B_];
+    MATRIX[_Y_] = LED2[i][_Y_];
+    
+    v = 0 | MATRIX[_R_];
+    v = ( v <<= 8 ) | MATRIX[_B_];
+    v = ( v <<= 8 ) | MATRIX[_G_];
+    v = ( v <<= 8 ) | MATRIX[_Y_];
+    sendDataToRegister( v );
+    delay( DELAY );
+  }
+
+  /*
   for ( int i = 0; i < sizeof(LED) / sizeof(long); i++ ) {
     sendDataToRegister( LED[i] );
     delay( DELAY );
   }
-  
+  */
   
   /*
   // for each LED
